@@ -21,12 +21,18 @@ def load_mode_config(mode: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def load_dataframe(path: str, sheet: Optional[Union[str, int]] = None) -> pd.DataFrame:
-    """Read Excel into a DataFrame (path is relative to CWD)."""
-    file_path = Path.cwd() / Path(path)   # 👈 join with current working dir
+def load_dataframe(path: str, sheet: Optional[Union[str, int]] = None) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    """Read Excel into a DataFrame (one sheet) or dict of DataFrames (all sheets)."""
+    file_path = Path.cwd() / Path(path)   # join with current working dir
     if not file_path.exists():
         raise FileNotFoundError(f"Data file not found: {file_path}")
-    return pd.read_excel(file_path, sheet_name=sheet or 0)
+
+    if sheet is None:
+        # Load all worksheets
+        return pd.read_excel(file_path, sheet_name=None)
+    else:
+        # Load only the specified worksheet
+        return pd.read_excel(file_path, sheet_name=sheet)
 
 
 @pytest.fixture(scope="session")
@@ -37,20 +43,19 @@ def current_mode() -> str:
 
 
 @pytest.fixture(scope="session")
-def dataframes(current_mode: str) -> Dict[str, pd.DataFrame]:
-    """Load all DataFrames defined in the current mode’s config."""
+def dataframes(current_mode: str) -> Dict[str, Dict[str, pd.DataFrame]]:
+    """Load all worksheets for each dataset defined in the current mode’s config."""
     config = load_mode_config(current_mode)
 
-    dfs: Dict[str, pd.DataFrame] = {}
+    dfs: Dict[str, Dict[str, pd.DataFrame]] = {}
     for name, cfg in config.items():
         path = cfg.get("path")
-        sheet = cfg.get("sheet", 0)
         try:
-            dfs[name] = load_dataframe(path, sheet)
-            print(f"\n\n Loaded {name} from {Path.cwd() / path}")
+            dfs[name] = load_dataframe(path, sheet=None)  # always load ALL sheets
+            print(f"\n\n Loaded {name} (all sheets) from {Path.cwd() / path}")
         except Exception as e:
             print(f"Failed to load {name} from {Path.cwd() / path}: {e}")
-            dfs[name] = None
+            dfs[name] = {}
 
     return dfs
 
