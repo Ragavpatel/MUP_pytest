@@ -1,0 +1,13 @@
+{
+    "data_modes": {
+        "ev": {
+            "path": "ev/testData/ev_data.xlsx",
+            "sheet": 0,
+            "description": "Electric vehicle data"
+        }
+    },
+    "settings": {
+        "timeout": 30,
+        "log_level": "INFO"
+    }
+}

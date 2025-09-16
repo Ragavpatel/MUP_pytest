@@ -1,0 +1,10 @@
+{
+  "Coefficients_data": {
+    "path": "solar/testData/Coefficients.xlsx",
+    "sheet": 1
+  },
+  "Raw_data": {
+    "path": "solar/testData/raw.xlsx",
+    "sheet": 1
+  }
+}
