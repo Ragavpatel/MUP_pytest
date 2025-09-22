@@ -1,77 +1,88 @@
 import pandas as pd
-import os
-from typing import Optional, Union
 from datetime import datetime
+import logging
+import numpy as np
 
-def fetch_date(df_raw: dict, which: str = "start"):
-    df_current = df_raw.get("Current")
-    if df_current is None or df_current.empty:
+def fetch_date(df_raw, sheet_name, which):
+    df_sheet_name = df_raw.get(sheet_name)
+    if df_sheet_name is None or df_sheet_name.empty:
         return None
 
-    df_current['date'] = pd.to_datetime(df_current['date'], errors='coerce')
-    df_current = df_current.dropna(subset=['date'])
+    df_sheet_name['date'] = pd.to_datetime(df_sheet_name['date'], errors='coerce')
+    df_sheet_name = df_sheet_name.dropna(subset=['date'])
 
-    if which.lower() == "start":
-        return df_current['date'].iloc[0].strftime("%d-%m-%Y")
-    elif which.lower() == "end":
-        return df_current['date'].iloc[-1].strftime("%d-%m-%Y")
+    if which.lower() == "startdate":
+        return df_sheet_name['date'].iloc[0].strftime("%d-%m-%Y")
+    elif which.lower() == "enddate":
+        return df_sheet_name['date'].iloc[-1].strftime("%d-%m-%Y")
     else:
+        logging.error("Parameter 'which' must be 'start' or 'end'.")
         raise ValueError("Parameter 'which' must be 'start' or 'end'.")
 
+def is_leap(year):
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
-def fetch_coefficient_value(
-    type,
-    df: pd.DataFrame, 
-    start_date: str = "", 
-    end_date: str = "", 
-    value_column: str = "Average"
-) -> pd.DataFrame:
-    df = df.copy()
-    if "Date" not in df.columns:
-        raise KeyError("Column 'Date' not found in DataFrame")
-
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date'])
-
+def get_coefficient_value(
+    start_date, 
+    end_date, 
+    df_coefficient: pd.DataFrame,
+    which,
+    value_column: str = "Average"):
+    
     if start_date and end_date:
-        start = datetime.strptime(start_date, "%d-%m-%Y")
-        end = datetime.strptime(end_date, "%d-%m-%Y")
+        start_date = datetime.strptime(start_date, "%d-%m-%Y")
+        end_date = datetime.strptime(end_date, "%d-%m-%Y")
+    
+    if start_date.month < 2 or (start_date.month == 2 and start_date.day <= 28):
+        year_to_check = start_date.year
+        logging.debug(f"Year to check for leap : {year_to_check}")
+    else:
+        year_to_check = end_date.year
+        logging.debug(f"Year to check for leap : {year_to_check}")
+    
+    if not is_leap(year_to_check):
+        mask_feb29 = ~((df_coefficient[which]['Date'].dt.day == 29) & (df_coefficient[which]['Date'].dt.month == 2))
+    else:
+        mask_feb29 = True
+    
+    if which.lower() == "solarcoefficient":
+        df_coefficient_local = df_coefficient.copy()
+        df_coefficient_local= df_coefficient_local[which]
+        
+        start_date = start_date.replace(year=2000)
+        end_date = end_date.replace(year=2000)
+        
+        if start_date <= end_date:
+            # Normal case
+            mask = (df_coefficient_local['Date'] >= start_date) & (df_coefficient_local['Date'] <= end_date)
+            return df_coefficient_local.loc[mask & mask_feb29, 'Value'].tolist()
+        else:
+            # Wrap-around case
+            mask1 = df_coefficient_local['Date'] >= start_date
+            mask2 = df_coefficient_local['Date'] <= end_date
+            part1 = df_coefficient_local.loc[mask1 & mask_feb29, value_column]
+            part2 = df_coefficient_local.loc[mask2 & mask_feb29, value_column]
+            return pd.concat([part1, part2]).reset_index(drop=True)
+        
+    elif which.lower() == "electricitycoefficient":
+        df_coefficient_local = df_coefficient.copy()
+        df_coefficient_local= df_coefficient_local[which]
+        
+        start_date = start_date.replace(year=2000)
+        end_date = end_date.replace(year=2000)
+        
+        if start_date <= end_date:
+            # Normal case
+            mask = (df_coefficient_local['Date'] >= start_date) & (df_coefficient_local['Date'] <= end_date)
+            return df_coefficient_local.loc[mask & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column].tolist()
+        else:
+            # Wrap-around case
+            mask1 = df_coefficient_local['Date'] >= start_date
+            mask2 = df_coefficient_local['Date'] <= end_date
+            part1 = df_coefficient_local.loc[mask1 & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column]
+            part2 = df_coefficient_local.loc[mask2 & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column]
 
-        df = df.sort_values(by="Date").reset_index(drop=True)
-        start_idx = df.index[df['Date'] >= start].min()
-
-        if pd.isna(start_idx):
-            start_idx = 0
-
-        df = pd.concat([df.iloc[start_idx:], df.iloc[:start_idx]])
-        df = df[df['Date'] >= start] if start <= end else df
-        mask_until_end = (df['Date'] <= end) | (df['Date'] >= start)
-        df = df.loc[mask_until_end]
-
-    df['Date'] = df['Date'].dt.strftime("%d-%m-%Y")
-
-    columns_to_return = ['Date']
-    if value_column in df.columns:
-        columns_to_return.append(value_column)
-
-    if 'TimeSlotId' in df.columns:
-        columns_to_return.append('TimeSlotId')
-
-    return df[columns_to_return].reset_index(drop=True)
-
-
-
-def get_coefficient_value(startdate,enddate,df_coefficient):
-    df_coefficient_values = fetch_coefficient_value(
-        type=None,
-        df=df_coefficient,
-        start_date="03-09-2000",
-        end_date="02-09-2000"
-    )
-
-    df_result = df_coefficient[['TimeSlotId', 'Average']].reset_index(drop=True)
-    return df_result
-
+            return pd.concat([part1, part2]).reset_index(drop=True)
 
 def get_electricity_consumption(df_request, sheet_name):
     df_request = df_request[sheet_name]
@@ -81,8 +92,21 @@ def get_electricity_consumption(df_request, sheet_name):
 
     return df_clean["ElectricityConsumption"].iloc[0]
 
+def verify_calculated_consumption(df_multiplied, df_raw, sheet_name, which):
+    mismatches = []
 
+    if which.lower() == "consumption":
+        col1 = df_multiplied.round(9)
+        col2 = df_raw[sheet_name]["house_usage_kwh"]
 
-def Assert_usage_kwh_and_calculate_consumption_coeff(df_current, sheet_name):
-    df_current = df_current[sheet_name]
-    
+    for idx, (v1, v2) in enumerate(zip(col1, col2)):
+        if np.isclose(v1, v2):
+            logging.debug(f" Row {idx}: Calculated Value: {v1} matches Existing value: {v2}")
+        else:
+            logging.error(f" Row {idx}: Calculated Value: {v1} != Existing value: {v2}")
+            mismatches.append(idx)
+
+    if mismatches:
+        logging.debug(f"\n Total mismatched rows: {len(mismatches)} → {mismatches}")
+    else:
+        logging.info(" All rows match perfectly!")
