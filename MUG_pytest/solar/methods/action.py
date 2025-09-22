@@ -23,66 +23,54 @@ def is_leap(year):
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 def get_coefficient_value(
-    start_date, 
+    start_date,
     end_date, 
     df_coefficient: pd.DataFrame,
     which,
-    value_column: str = "Average"):
-    
+    profile_class: int | None = 1,
+    reference_year: int | None = 2000,
+    value_column: str = "Average"
+):
+
     if start_date and end_date:
         start_date = datetime.strptime(start_date, "%d-%m-%Y")
         end_date = datetime.strptime(end_date, "%d-%m-%Y")
     
     if start_date.month < 2 or (start_date.month == 2 and start_date.day <= 28):
         year_to_check = start_date.year
-        logging.debug(f"Year to check for leap : {year_to_check}")
     else:
         year_to_check = end_date.year
-        logging.debug(f"Year to check for leap : {year_to_check}")
-    
+
+    logging.debug(f"Year to check for leap: {year_to_check}")
+
     if not is_leap(year_to_check):
-        mask_feb29 = ~((df_coefficient[which]['Date'].dt.day == 29) & (df_coefficient[which]['Date'].dt.month == 2))
+        mask_feb29 = ~((df_coefficient[which]['Date'].dt.day == 29) & 
+                       (df_coefficient[which]['Date'].dt.month == 2))
     else:
         mask_feb29 = True
-    
-    if which.lower() == "solarcoefficient":
-        df_coefficient_local = df_coefficient.copy()
-        df_coefficient_local= df_coefficient_local[which]
-        
-        start_date = start_date.replace(year=2000)
-        end_date = end_date.replace(year=2000)
-        
-        if start_date <= end_date:
-            # Normal case
-            mask = (df_coefficient_local['Date'] >= start_date) & (df_coefficient_local['Date'] <= end_date)
-            return df_coefficient_local.loc[mask & mask_feb29, 'Value'].tolist()
-        else:
-            # Wrap-around case
-            mask1 = df_coefficient_local['Date'] >= start_date
-            mask2 = df_coefficient_local['Date'] <= end_date
-            part1 = df_coefficient_local.loc[mask1 & mask_feb29, value_column]
-            part2 = df_coefficient_local.loc[mask2 & mask_feb29, value_column]
-            return pd.concat([part1, part2]).reset_index(drop=True)
-        
-    elif which.lower() == "electricitycoefficient":
-        df_coefficient_local = df_coefficient.copy()
-        df_coefficient_local= df_coefficient_local[which]
-        
-        start_date = start_date.replace(year=2000)
-        end_date = end_date.replace(year=2000)
-        
-        if start_date <= end_date:
-            # Normal case
-            mask = (df_coefficient_local['Date'] >= start_date) & (df_coefficient_local['Date'] <= end_date)
-            return df_coefficient_local.loc[mask & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column].tolist()
-        else:
-            # Wrap-around case
-            mask1 = df_coefficient_local['Date'] >= start_date
-            mask2 = df_coefficient_local['Date'] <= end_date
-            part1 = df_coefficient_local.loc[mask1 & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column]
-            part2 = df_coefficient_local.loc[mask2 & (df_coefficient_local["ProfileClass"] == 1) & mask_feb29, value_column]
 
-            return pd.concat([part1, part2]).reset_index(drop=True)
+    df_coefficient_local = df_coefficient.copy()[which]
+
+    # Make reference year dynamic (default = 2000)
+    if reference_year:
+        start_date = start_date.replace(year=reference_year)
+        end_date = end_date.replace(year=reference_year)
+
+    # Build mask dynamically
+    mask_base = mask_feb29
+    if profile_class is not None and "ProfileClass" in df_coefficient_local.columns:
+        mask_base = mask_base & (df_coefficient_local["ProfileClass"] == profile_class)
+
+    if start_date <= end_date:
+        mask = (df_coefficient_local['Date'] >= start_date) & (df_coefficient_local['Date'] <= end_date)
+        return df_coefficient_local.loc[mask & mask_base, value_column].tolist()
+    else:
+        mask1 = df_coefficient_local['Date'] >= start_date
+        mask2 = df_coefficient_local['Date'] <= end_date
+        part1 = df_coefficient_local.loc[mask1 & mask_base, value_column]
+        part2 = df_coefficient_local.loc[mask2 & mask_base, value_column]
+        return pd.concat([part1, part2]).reset_index(drop=True)
+
 
 def get_electricity_consumption(df_request, sheet_name):
     df_request = df_request[sheet_name]
@@ -99,14 +87,38 @@ def verify_calculated_consumption(df_multiplied, df_raw, sheet_name, which):
         col1 = df_multiplied.round(9)
         col2 = df_raw[sheet_name]["house_usage_kwh"]
 
+    elif which.lower() == "generation":
+        col1 = df_multiplied.round(9)
+        col2 = df_raw[sheet_name]["solar_power_generated_kwh"]
+
+    else:
+        raise ValueError(f"Unknown verification type: {which}")
+
     for idx, (v1, v2) in enumerate(zip(col1, col2)):
         if np.isclose(v1, v2):
             logging.debug(f" Row {idx}: Calculated Value: {v1} matches Existing value: {v2}")
         else:
             logging.error(f" Row {idx}: Calculated Value: {v1} != Existing value: {v2}")
             mismatches.append(idx)
+            break
 
     if mismatches:
         logging.debug(f"\n Total mismatched rows: {len(mismatches)} → {mismatches}")
     else:
         logging.info(" All rows match perfectly!")
+
+
+def calculate_panel_capacity(fix_panel_capacity):
+    degradation = round((0.025 / 365) * fix_panel_capacity, 9)
+    values = []
+    period = 0
+
+    while fix_panel_capacity - degradation * (period // 48) > 0:
+        if period < 48:
+            value = fix_panel_capacity
+        else:
+            value = fix_panel_capacity - degradation * (period // 48)
+        values.append(value)
+        period += 1
+
+    return pd.DataFrame({"PanelCapacity": values})
