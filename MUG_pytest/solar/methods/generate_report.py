@@ -1,7 +1,15 @@
-from datetime import datetime
-import logging, os
+import logging
+import os
 
-def generate_html_report(user_info, execution_results=None):
+def generate_html_report(user_info, mismatches=None):
+    """
+    Generate an HTML report for a customer showing user info and mismatched rows.
+    Formats date and slot values for cleaner display.
+
+    :param user_info: dict containing customer details (e.g., "customerId", "name", etc.)
+    :param mismatches: list of tuples (idx, date_val, slot_val, calculated_value, existing_value)
+    :return: filepath of the saved HTML report
+    """
     customer_id = user_info.get("customerId", "Unknown")
 
     # ---------- HTML Header ----------
@@ -51,38 +59,49 @@ def generate_html_report(user_info, execution_results=None):
     """
 
     # ---------- User Info Table ----------
-    html_str += '<h3>User Info</h3>\n'
-    html_str += '<table>\n<thead><tr><th>Field</th><th>Value</th></tr></thead>\n<tbody>\n'
-    for key, value in user_info.items():
-        html_str += f'  <tr><td>{key}</td><td>{value}</td></tr>\n'
-        logging.info(f"{key}: {value}")
-    html_str += '</tbody>\n</table>\n'
+    html_str += '<h3>User Information</h3>\n'
+    html_str += '<table>\n<thead><tr>'
+    for key in user_info.keys():
+        html_str += f'<th>{key}</th>'
+    html_str += '</tr></thead>\n<tbody>\n<tr>'
+    for value in user_info.values():
+        html_str += f'<td>{value}</td>'
+    html_str += '</tr>\n</tbody>\n</table>\n'
 
-    # ---------- Execution Results Table ----------
+    # ---------- Execution / Mismatches Table ----------
     html_str += '<h3>Execution Results</h3>\n'
-    html_str += '<table>\n<thead><tr><th>Row / Step</th><th>Status / Detail</th></tr></thead>\n<tbody>\n'
+    html_str += '<table>\n<thead><tr>'
+    html_str += '<th>Row</th><th>Date</th><th>Slot</th><th>Calculated Value</th><th>Existing Value</th><th>Status</th>'
+    html_str += '</tr></thead>\n<tbody>\n'
 
-    if execution_results is None:
-        html_str += '  <tr><td>-</td><td>Execution not run yet</td></tr>\n'
-        logging.info("Execution not run yet")
-    elif isinstance(execution_results, dict) and execution_results:
-        for row, detail in execution_results.items():
-            css_class = "failed" if ("!=" in str(detail) or "Error" in str(detail)) else "passed"
-            html_str += f'  <tr class="{css_class}"><td>{row}</td><td>{detail}</td></tr>\n'
-            logging.error(f"Row {row}: {detail}")
+    if not mismatches:
+        html_str += '<tr class="passed"><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>All rows match perfectly!</td></tr>\n'
+        logging.info("All rows match perfectly!")
     else:
-        message = execution_results if isinstance(execution_results, str) else "All raw calculations matched."
-        html_str += f'  <tr class="passed"><td>-</td><td>{message}</td></tr>\n'
-        logging.info(message)
+        for idx, date_val, slot_val, calc_val, exist_val in mismatches:
+            # Format date
+            if isinstance(date_val, str):
+                date_display = date_val.split(" ")[0]  # remove time if present
+            elif hasattr(date_val, "strftime"):
+                date_display = date_val.strftime("%Y-%m-%d")
+            else:
+                date_display = str(date_val)
 
-    html_str += '</tbody>\n</table>\n</body>\n</html>'
+            # Format slot
+            if isinstance(slot_val, float) and slot_val.is_integer():
+                slot_display = str(int(slot_val))
+            else:
+                slot_display = str(slot_val)
 
-    # ---------- Save HTML (overwrite previous report) ----------
+            html_str += f'<tr class="failed"><td>{idx}</td><td>{date_display}</td><td>{slot_display}</td><td>{calc_val}</td><td>{exist_val}</td><td>Mismatch</td></tr>\n'
+            logging.error(f"Row {idx}: Date {date_display} Slot {slot_display} → Calculated Value: {calc_val} != Existing Value: {exist_val}")
+
+    html_str += "</tbody>\n</table>\n</body>\n</html>"
+
+    # ---------- Save HTML ----------
     report_dir = r"C:\Automation\E-MUG\MUP_pytest\MUG_pytest\report"
     os.makedirs(report_dir, exist_ok=True)
-
-    filename = "report.html"  # Fixed filename to overwrite
-    filepath = os.path.join(report_dir, filename)
+    filepath = os.path.join(report_dir, "report.html")
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(html_str)

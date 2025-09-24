@@ -23,7 +23,7 @@ def calculate_consumption(df_raw, df_coefficient):
     return df_calculated_coefficient
 
 def verify_with_raw_data(df_calculated, df_raw, sheet_name, which):
-    verify_calculated_consumption(df_calculated,df_raw,sheet_name,which )
+    return verify_calculated_consumption(df_calculated,df_raw,sheet_name,which )
 
 
 def calculate_generation(df_raw, df_coefficient):
@@ -32,12 +32,13 @@ def calculate_generation(df_raw, df_coefficient):
 
     df_coefficient_average = get_coefficient_value(startdate, enddate, df_coefficient, "SolarCoefficient")
 
-    NoOfPanel = fetch_data_from_df(df_raw, "Request", "NoOfPanel")
-    PanelSize_kWp = fetch_data_from_df(df_raw,"Request","PanelSize_kWp")
-    PanelIrradiance = fetch_data_from_df(df_raw,"Request","PanelIrradiance")
+    No_Of_panel = fetch_data_from_df(df_raw, "Request", "NoOfPanel")
+    Panel_size_kWp = fetch_data_from_df(df_raw,"Request","PanelSize_kWp")
+    Panel_irradiance = fetch_data_from_df(df_raw,"Request","PanelIrradiance")
+    Panel_degradation = fetch_data_from_df(df_raw,"Request","PanelDegradationPctYr1")
 
-    fix_panel_capacity = NoOfPanel * PanelSize_kWp
-    panel_capacity_df = calculate_panel_capacity(fix_panel_capacity)
+    fix_panel_capacity = No_Of_panel * Panel_size_kWp
+    panel_capacity_df = calculate_panel_capacity(fix_panel_capacity,Panel_degradation,df_raw,"Current")
 
     # Align lengths
     min_len = min(len(df_coefficient_average), len(panel_capacity_df))
@@ -46,7 +47,7 @@ def calculate_generation(df_raw, df_coefficient):
         "PanelCapacity": panel_capacity_df["PanelCapacity"][:min_len],
     })
     df_result["CalculatedSolarGeneration"] = (
-        df_result["SolarCoefficient"] * df_result["PanelCapacity"] * PanelIrradiance
+        df_result["SolarCoefficient"] * df_result["PanelCapacity"] * Panel_irradiance
     )
 
     logging.info("Calculated Solar Generation completed!")
@@ -80,6 +81,6 @@ def get_user_data(df):
     }
     return user_info
 
-def generate_report(df):
+def generate_report(df,exceution):
     user_info = get_user_data(df)
-    generate_html_report(user_info)
+    generate_html_report(user_info,exceution)

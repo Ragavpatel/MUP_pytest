@@ -85,31 +85,46 @@ def verify_calculated_consumption(df_multiplied, df_raw, sheet_name, which):
 
     if which.lower() == "consumption":
         col1 = df_multiplied.round(9)
-        col2 = df_raw[sheet_name]["house_usage_kwh"]
+        col2 = df_raw[sheet_name]["house_usage_kwh"].round(9)
 
     elif which.lower() == "generation":
         col1 = df_multiplied.round(9)
-        col2 = df_raw[sheet_name]["solar_power_generated_kwh"]
+        col2 = df_raw[sheet_name]["solar_power_generated_kwh"].round(9)
 
     else:
         raise ValueError(f"Unknown verification type: {which}")
 
     for idx, (v1, v2) in enumerate(zip(col1, col2)):
-        if np.isclose(v1, v2):
-            logging.debug(f" Row {idx}: Calculated Value: {v1} matches Existing value: {v2}")
+        if v1 != v2:
+            date_val = df_raw[sheet_name]["date"].iloc[idx]
+            slot_val = df_raw[sheet_name]["time_slot_id"].iloc[idx]
+            mismatches.append((idx, date_val, slot_val, v1, v2))
+            logging.error(f"Row {idx}: Calculated Value: {v1} != Existing value: {v2}")
         else:
-            logging.error(f" Row {idx}: Calculated Value: {v1} != Existing value: {v2}")
-            mismatches.append(idx)
-            break
+            logging.debug(f"Row {idx}: {v1} matches {v2}")
 
     if mismatches:
-        logging.debug(f"\n Total mismatched rows: {len(mismatches)} → {mismatches}")
+        return mismatches
     else:
-        logging.info(" All rows match perfectly!")
+        logging.info("All rows match perfectly!")
+        return "All rows match perfectly!"
 
 
-def calculate_panel_capacity(fix_panel_capacity):
-    degradation = round((0.025 / 365) * fix_panel_capacity, 9)
+def calculate_panel_capacity(fix_panel_capacity,Panel_degradation,df_request,sheet_name):
+    df_request = df_request[sheet_name]
+    current_year = df_request["date"].dt.year.iloc[0]
+    has_feb29 = ((df_request["date"].dt.month == 2) & (df_request["date"].dt.day == 29)).any()
+
+    if is_leap(current_year) and has_feb29:
+        days_in_year = 366
+    else:
+        days_in_year = 365
+
+    print(f"Days in year used: {days_in_year}")
+
+    degradation_rate = Panel_degradation / 100
+
+    degradation = round((degradation_rate / days_in_year) * fix_panel_capacity, 9)
     values = []
     period = 0
 
