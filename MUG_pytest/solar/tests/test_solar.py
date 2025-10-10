@@ -1,21 +1,27 @@
 import logging,os
 from solar.methods.utils import *
-from solar.methods.generate_report import *
 
-# def test_solar_journey():
-#     df_raw_data = loadExcelFile("raw.xlsx")
-#     df_coefficient_data = loadExcelFile("coefficients.xlsx")
-#     logging.info(f"Coefficient data fetched fetched")
-#     logging.debug(f"Coefficient data fetched - {df_coefficient_data}")
-#     df_calculated_coefficient = calculate_consumption(df_raw_data, df_coefficient_data)
-#     verify_with_raw_data(df_calculated_coefficient, df_raw_data, "Current", "consumption")
-#     generate_report(df_raw_data)
-
-def test_solar_coeff_journey():
-    df_raw_data = loadExcelFile("raw.xlsx")
+def test_solar_journey():
+    
     df_coefficient_data = loadExcelFile("coefficients.xlsx")
-    logging.info(f"Coefficient data fetched fetched")
-    logging.debug(f"Coefficient data fetched - {df_coefficient_data}")
-    df_calculated_solar_geneartion = calculate_generation(df_raw_data, df_coefficient_data)
-    excecution = verify_with_raw_data(df_calculated_solar_geneartion, df_raw_data, "Current", "generation")
-    generate_report(df_raw_data,excecution)
+    data = get_and_set_data_from_quoteId()
+
+    
+    # Calculate consumption and assert with received data
+    df_calculated_consumption = calculate_consumption(df_coefficient_data)
+    verify_calculated_with_api(df_calculated_consumption["consumption"].sum(), "consumption")		
+    verify_calculated_with_api_monthly(df_calculated_consumption, data, "consumption")
+    
+    # # Calculate generation and assert with received data
+    df_calculated_generation = calculate_generation(df_coefficient_data)
+    verify_calculated_with_api(df_calculated_generation["generation"].sum(), "generation")		
+    verify_calculated_with_api_monthly(df_calculated_generation, data, "generation")
+    
+    # calculate battery capacity and assert with recieved data
+    # df_calculated_batery_capacity = calculate_battery_capacity()
+    
+    df_results = get_unitRate_dataframe(data, "proposed", "import")
+    logging.info(df_results.to_string)
+
+    
+    

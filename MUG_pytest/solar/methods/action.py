@@ -2,6 +2,9 @@ import pandas as pd
 from datetime import datetime
 import logging
 import numpy as np
+from solar.config import solar_config
+from solar.methods.state_manager import StateManager
+from datetime import datetime, timedelta
 
 def fetch_date(df_raw, sheet_name, which):
     df_sheet_name = df_raw.get(sheet_name)
@@ -97,7 +100,7 @@ def verify_calculated_consumption(df_multiplied, df_raw, sheet_name, which):
     for idx, (v1, v2) in enumerate(zip(col1, col2)):
         if v1 != v2:
             date_val = df_raw[sheet_name]["date"].iloc[idx]
-            slot_val = df_raw[sheet_name]["time_slot_id"].iloc[idx]
+            slot_val = df_raw[sheet_name]["time_slot_id"].iloc[idx] if "Slot" in df_raw[sheet_name].columns else "-"
             mismatches.append((idx, date_val, slot_val, v1, v2))
             logging.error(f"Row {idx}: Calculated Value: {v1} != Existing value: {v2}")
         else:
